@@ -5,6 +5,39 @@ use std::collections::VecDeque;
 // use std::iter;
 use day11::State;
 
+use std::thread;
+use std::sync::{mpsc, Arc, Mutex, Condvar};
+use std::sync::mpsc::channel;
+
+struct Arcade {
+    input_tx: mpsc::Sender<isize>,
+    output_buffer: Arc<Mutex<Vec<isize>>>,
+    thread_handle: thread::JoinHandle<()>,
+}
+
+impl Arcade {
+    fn new(input: &str) -> Self {
+        let (input_tx, irx) = mpsc::channel();
+        //let (otx, output_rx) = mpsc::channel();
+        let output_buffer = Arc::new(Mutex::new(Vec::new()));
+        let ob = output_buffer.clone();
+        let mut s = State::from(&input);
+        let thread_handle  = thread::spawn(move || {
+            let mut obl = Some(ob.lock().unwrap());
+            while let Some(o) = s.next_number_callback(|| {
+                obl.take();
+                let res = Some(irx.recv().unwrap());
+                obl=Some(ob.lock().unwrap());
+                res
+            }).unwrap() {
+                obl.unwrap().push(o);
+            };
+            ()
+        });
+        Arcade{input_tx, output_buffer, thread_handle}
+    }
+}
+
 #[derive(Debug)]
 struct Prompt {
     room: String,
@@ -63,7 +96,6 @@ struct Player {
 }
 
 impl Player {
-
     fn respond(&mut self, prompt: String) -> Vec<u8> {
         println!("{}", &prompt);
         if let Some(parsed) = parse_prompt(&prompt) {
